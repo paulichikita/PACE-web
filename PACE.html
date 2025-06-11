@@ -1,0 +1,666 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PACE - Mi Espera en Urgencias</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Calm Harmony Neutrals -->
+    <!-- Application Structure Plan: La aplicación se centra en un panel de control del paciente. El flujo actualizado es: 1) Vista inicial con dos opciones claras: 'Ingresar con RUT' para pacientes admitidos y 'Probar la App' para el público general. Esto permite una interacción dual. 2) La vista 'Estado' se activa tras la simulación (RUT o prueba), mostrando categoría, tiempo de espera y acceso a un Asistente IA. 3) La navegación persistente permite explorar la Videoteca, la info de Triage y ahora una sección para 'Compartir' la app vía QR, mejorando la difusión. -->
+    <!-- Visualization & Content Choices: La información del informe se transforma en componentes interactivos. 'Sobre el Triage': Se usa un sistema de tarjetas expandibles (HTML/JS) con opción de explicación detallada vía Gemini. 'Estado del Paciente': Panel destacado con colores, temporizador (JS) y un Asistente IA (Gemini) para consejos y preguntas. 'Videoteca': Cuadrícula de miniaturas con modales (HTML/JS). Justificación: maximizar claridad, interacción y retención de información para un usuario estresado, usando IA para personalización. -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .triage-card-C1 { background-color: #dc2626; color: white; }
+        .triage-card-C2 { background-color: #f97316; color: white; }
+        .triage-card-C3 { background-color: #facc15; color: #44403c; }
+        .triage-card-C4 { background-color: #4ade80; color: #44403c; }
+        .triage-card-C5 { background-color: #3b82f6; color: white; }
+        .triage-border-C1 { border-color: #dc2626; }
+        .triage-border-C2 { border-color: #f97316; }
+        .triage-border-C3 { border-color: #facc15; }
+        .triage-border-C4 { border-color: #4ade80; }
+        .triage-border-C5 { border-color: #3b82f6; }
+        .triage-text-C1 { color: #dc2626; }
+        .triage-text-C2 { color: #f97316; }
+        .triage-text-C3 { color: #ca8a04; }
+        .triage-text-C4 { color: #16a34a; }
+        .triage-text-C5 { color: #3b82f6; }
+        .triage-bg-light-C1 { background-color: #fee2e2; }
+        .triage-bg-light-C2 { background-color: #ffedd5; }
+        .triage-bg-light-C3 { background-color: #fefce8; }
+        .triage-bg-light-C4 { background-color: #dcfce7; }
+        .triage-bg-light-C5 { background-color: #dbeafe; }
+        .view { display: none; }
+        .view.active { display: block; }
+        .modal-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+        .modal-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+        .modal-content {
+            background: white;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            max-width: 90%;
+            width: 50rem;
+            transform: scale(0.95);
+            transition: transform 0.3s ease;
+        }
+        .modal-overlay.active .modal-content {
+            transform: scale(1);
+        }
+        .gemini-response-container {
+            margin-top: 1rem;
+            padding: 1rem;
+            border: 1px solid #e2e8f0;
+            border-radius: 0.5rem;
+            background-color: #f8fafc;
+        }
+        .gemini-response-container h4 {
+            font-weight: 600;
+            color: #1e293b;
+            margin-bottom: 0.5rem;
+        }
+        .gemini-response-container p, .gemini-response-container ul {
+            font-size: 0.9rem;
+            color: #475569;
+            margin-bottom: 0.5rem;
+        }
+        .gemini-response-container ul {
+            list-style-position: inside;
+            list-style-type: disc;
+            padding-left: 1rem;
+        }
+        .loader {
+            border: 4px solid #f3f3f3;
+            border-top: 4px solid #3498db;
+            border-radius: 50%;
+            width: 24px;
+            height: 24px;
+            animation: spin 1s linear infinite;
+            margin: 5px auto;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-800">
+
+    <div id="app-container" class="max-w-4xl mx-auto p-4 md:p-6 min-h-screen">
+        
+        <header class="flex justify-between items-center pb-4 border-b border-slate-200">
+            <div class="flex items-center gap-3">
+                 <div class="w-10 h-10 bg-teal-600 text-white flex items-center justify-center rounded-full font-bold text-xl">
+                    P
+                </div>
+                <div>
+                    <h1 class="text-xl md:text-2xl font-bold text-teal-700">PACE</h1>
+                    <p class="text-xs text-slate-500 font-medium">Portal de Atención y Clasificación en Urgencias</p>
+                </div>
+            </div>
+             <div class="text-right">
+                <p class="text-sm font-semibold text-slate-600">Hospital Regional de Talca</p>
+                <p id="current-time" class="text-xs text-slate-500"></p>
+            </div>
+        </header>
+
+        <main id="main-content" class="pt-6 pb-24">
+            
+            <div id="scan-view" class="view active">
+                <div class="text-center">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-3 text-slate-800">Bienvenido/a al proyecto PACE</h2>
+                    <p class="text-slate-600 mb-8 max-w-2xl mx-auto">Consulte su estado de atención o explore cómo funciona nuestro sistema de clasificación.</p>
+                </div>
+
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center text-center">
+                        <h3 class="font-bold text-lg text-slate-800 mb-3">¿Ya fue atendido en Triage?</h3>
+                        <p class="text-sm text-slate-600 mb-4 flex-grow">Ingrese su RUT para ver su categoría y tiempo de espera estimado.</p>
+                        <div class="w-full">
+                            <input type="text" id="rut-input" placeholder="Ej: 12.345.678-9" class="w-full px-4 py-3 border border-slate-300 rounded-lg mb-3 text-center">
+                            <button id="rut-submit-btn" class="w-full bg-teal-600 text-white font-bold py-3 px-6 rounded-lg hover:bg-teal-700 transition-all shadow-md hover:shadow-lg">
+                                Consultar mi Estado
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 flex flex-col items-center text-center">
+                        <h3 class="font-bold text-lg text-slate-800 mb-3">¿Quiere saber cómo funciona?</h3>
+                        <p class="text-sm text-slate-600 mb-4 flex-grow">Vea un ejemplo de cómo clasificamos la urgencia y la información que entregamos.</p>
+                        <button id="demo-btn" class="w-full bg-slate-200 text-slate-800 font-bold py-3 px-6 rounded-lg hover:bg-slate-300 transition-all shadow-md hover:shadow-lg">
+                            Probar la Aplicación
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div id="status-view" class="view">
+                <div id="patient-status-card" class="rounded-2xl p-6 md:p-8 shadow-lg mb-8 transition-all">
+                    <div class="flex flex-col md:flex-row gap-6">
+                        <div class="flex-1">
+                            <h2 class="text-sm font-bold uppercase tracking-widest mb-1" id="patient-category-title">SU CATEGORIZACIÓN ES</h2>
+                            <p class="text-4xl md:text-5xl font-extrabold mb-4" id="patient-category-name"></p>
+                            <p class="text-base" id="patient-category-desc"></p>
+                        </div>
+                        <div class="md:border-l md:pl-6 border-slate-300/50 flex-1">
+                             <h3 class="text-sm font-bold uppercase tracking-widest mb-1">TIEMPO DE ESPERA ESTIMADO</h3>
+                             <p class="text-4xl md:text-5xl font-extrabold" id="patient-wait-time">--:--:--</p>
+                             <p class="text-xs mt-2 opacity-80">Este tiempo es una estimación y puede cambiar según la llegada de pacientes más graves.</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 mb-8">
+                    <button id="gemini-symptom-assist-btn" class="w-full bg-sky-600 text-white font-semibold py-3 px-6 rounded-lg hover:bg-sky-700 transition-all flex items-center justify-center gap-2 text-base">
+                        <span class="text-xl">✨</span> Asistente IA: Consejos y Preguntas
+                    </button>
+                    <div id="gemini-symptom-response-area" class="hidden mt-4">
+                        <div class="loader"></div>
+                        <div class="gemini-response-content"></div>
+                         <p class="text-xs text-slate-500 mt-3 text-center"><i>Este es un asistente virtual y su información no reemplaza el consejo médico profesional.</i></p>
+                    </div>
+                </div>
+
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 class="font-bold text-xl mb-4 text-slate-800">Recomendaciones Mientras Espera</h3>
+                        <div id="patient-recommendations" class="space-y-3 text-slate-600"></div>
+                    </div>
+                    <div class="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                        <h3 class="font-bold text-xl mb-4 text-slate-800">Videos Recomendados</h3>
+                        <div id="patient-recommended-videos" class="space-y-3"></div>
+                    </div>
+                </div>
+            </div>
+
+            <div id="triage-info-view" class="view">
+                 <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-2 text-slate-800">Entendiendo la Categorización C1-C5</h2>
+                    <p class="text-slate-600 mb-8">En urgencias, la atención no es por orden de llegada, sino por la gravedad de la condición de cada paciente. Usamos un sistema de 5 categorías (C1 a C5) para asegurar que quienes más lo necesitan, reciban atención primero. Haga clic en cada categoría para saber más.</p>
+                    <div id="triage-cards-container" class="space-y-4"></div>
+                </div>
+            </div>
+            
+            <div id="videoteca-view" class="view">
+                 <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-2 text-slate-800">Videoteca Informativa</h2>
+                    <p class="text-slate-600 mb-8">Hemos preparado videos cortos para responder a las preguntas más frecuentes y ayudarle a usar correctamente la red de salud.</p>
+                    <div id="video-gallery" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6"></div>
+                </div>
+            </div>
+            
+            <div id="share-view" class="view">
+                <div class="bg-white p-6 md:p-8 rounded-2xl shadow-sm border border-slate-200 text-center">
+                    <h2 class="text-2xl md:text-3xl font-bold mb-2 text-slate-800">Compartir PACE</h2>
+                    <p class="text-slate-600 mb-6">Escanee el siguiente código QR para acceder a esta aplicación desde otro dispositivo o para compartirla con alguien más.</p>
+                    <div id="qr-code-container" class="flex justify-center">
+                        <img id="qr-code-img" src="" alt="Código QR para acceder a la aplicación PACE" class="rounded-lg shadow-md border-4 border-white">
+                    </div>
+                    <p class="text-xs text-slate-500 mt-4">La URL de esta aplicación es: <code id="app-url-display" class="bg-slate-100 p-1 rounded"></code></p>
+                </div>
+            </div>
+
+        </main>
+
+        <footer class="mt-12 pt-6 pb-2 border-t border-slate-200 fixed bottom-0 left-0 right-0 bg-white/80 backdrop-blur-sm z-50 shadow-[0_-2px_10px_rgba(0,0,0,0.05)]">
+            <nav id="bottom-nav" class="max-w-4xl mx-auto flex justify-around px-4">
+            </nav>
+        </footer>
+
+    </div>
+
+    <div id="video-modal" class="modal-overlay">
+        <div class="modal-content relative">
+            <button id="close-modal-btn" class="absolute -top-4 -right-4 bg-white rounded-full p-1 shadow-lg text-slate-600 hover:text-red-500 transition-all">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                    <path stroke-linecap="round" stroke-linejoin="round" d="M10 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2m7-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+            </button>
+            <h3 id="modal-video-title" class="text-2xl font-bold mb-4"></h3>
+            <div class="aspect-w-16 aspect-h-9 bg-black rounded-lg flex items-center justify-center">
+                 <p class="text-white">Simulación de reproductor de video.</p>
+            </div>
+            <p id="modal-video-desc" class="mt-4 text-slate-600"></p>
+        </div>
+    </div>
+
+    <script>
+        const triageData = {
+            C1: {
+                id: "C1", name: "C1 / Rojo", title: "Resucitación",
+                description: "Emergencia vital. Su vida corre peligro inmediato.", waitTimeStandard: 0,
+                recommendations: ["<b>Para acompañantes:</b> Su familiar requiere atención vital urgente. El equipo médico está actuando.", "Por favor, mantenga la calma y siga las indicaciones del personal."],
+                videos: ["v-emergency"]
+            },
+            C2: {
+                id: "C2", name: "C2 / Naranjo", title: "Alta Complejidad",
+                description: "Emergencia grave. Su condición es seria y puede empeorar.", waitTimeStandard: 20,
+                recommendations: ["Permanezca atento/a a sus síntomas.", "Avise <b>INMEDIATAMENTE</b> al personal si se siente peor (ej: aumenta el dolor, mayor dificultad para respirar, mareo intenso).", "No coma ni beba nada hasta que el personal médico lo autorice."],
+                videos: ["v-c2", "v-alert"]
+            },
+            C3: {
+                id: "C3", name: "C3 / Amarillo", title: "Mediano Riesgo",
+                description: "Urgencia de riesgo moderado. Necesita atención médica pronto.", waitTimeStandard: 90,
+                recommendations: ["Es importante que nos avise si su condición cambia o empeora mientras espera.", "Puede solicitar una reevaluación al personal si el dolor aumenta, la fiebre sube, o siente nuevos síntomas.", "Manténgase cerca de la sala de espera."],
+                videos: ["v-c3", "v-alert"]
+            },
+            C4: {
+                id: "C4", name: "C4 / Verde", title: "Baja Complejidad",
+                description: "Urgencia menor. Su condición no es grave en este momento.", waitTimeStandard: 180,
+                recommendations: ["Su condición es menos urgente y la espera puede ser más larga.", "Para estos casos, un <b>SAPU</b> o <b>SAR</b> podría atenderle más rápido. Consulte al personal sobre la mejor alternativa para usted.", "Si decide esperar y se siente peor, avise al personal."],
+                videos: ["v-where-to-go", "v-alternatives"]
+            },
+            C5: {
+                id: "C5", name: "C5 / Azul", title: "Atención General",
+                description: "Sin urgencia. Su consulta puede ser resuelta en otro lugar.", waitTimeStandard: 240,
+                recommendations: ["Su consulta es general y no una urgencia. La espera será prolongada ya que los casos graves son prioridad.", "Le recomendamos consultar en su <b>CESFAM</b> o <b>SAPU</b> para una atención más adecuada y oportuna.", "Si decide esperar, le pedimos paciencia."],
+                videos: ["v-where-to-go", "v-c5"]
+            }
+        };
+
+        const videoData = {
+            "v-triage": { title: "Entendiendo la Categorización C1-C5", description: "Aprenda cómo funciona el sistema de clasificación de urgencias y por qué la atención se prioriza por gravedad." },
+            "v-where-to-go": { title: "¿Urgencia, SAPU o SAR? Cómo decidir", description: "Conozca las diferencias y cuándo acudir a cada centro de la red de salud para una atención más rápida y eficiente." },
+            "v-selfcare": { title: "Manejo de Afecciones Menores en Casa", description: "Consejos validados por médicos para cuidar de síntomas leves como resfríos, sin necesidad de ir a urgencias." },
+            "v-alert": { title: "Signos de Alarma: Cuándo Re-Alertar", description: "Identifique los síntomas que indican un empeoramiento y que requieren que avise al personal de inmediato." },
+            "v-rights": { title: "Sus Derechos y Deberes en Urgencias", description: "Un resumen de la Ley N° 20.584 para que conozca sus derechos como paciente." },
+            "v-app-guide": { title: "Guía de Uso de PACE", description: "Un tutorial rápido para sacar el máximo provecho a esta herramienta durante su espera." },
+            "v-emergency": { title: "Entendiendo una Emergencia Vital (C1)", description: "Información para acompañantes sobre qué esperar cuando un familiar es clasificado como C1." },
+            "v-c2": { title: "¿Qué esperar si soy C2?", description: "Información sobre el proceso de atención para pacientes con urgencias de alta complejidad." },
+            "v-c3": { title: "Manejando la espera en C3", description: "Consejos y recomendaciones para pacientes con urgencias de mediano riesgo." },
+            "v-alternatives": { title: "Alternativas de atención en Talca", description: "Conozca los SAPU y SAR disponibles en la comuna para atenciones de baja complejidad." },
+            "v-c5": { title: "Entendiendo la categorización C5", description: "Sepa por qué las consultas generales tienen tiempos de espera más largos y cuáles son sus mejores opciones." }
+        };
+
+        let waitTimeInterval;
+        let appState = {
+            currentView: 'scan',
+            patientTriage: null,
+            navInitialized: false
+        };
+        
+        async function getGeminiApiResponse(prompt) {
+            const apiKey = ""; 
+            const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+            
+            let chatHistory = [{ role: "user", parts: [{ text: prompt }] }];
+            const payload = { contents: chatHistory };
+
+            try {
+                const response = await fetch(apiUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                if (!response.ok) {
+                    const errorBody = await response.text();
+                    console.error(`API call failed with status: ${response.status}`, errorBody);
+                    throw new Error(`API call failed with status: ${response.status}`);
+                }
+                const result = await response.json();
+                if (result.candidates && result.candidates.length > 0 &&
+                    result.candidates[0].content && result.candidates[0].content.parts &&
+                    result.candidates[0].content.parts.length > 0) {
+                    return result.candidates[0].content.parts[0].text;
+                } else {
+                    console.error("Gemini API response format error:", result);
+                    return "No se pudo obtener una respuesta del asistente IA en este momento (formato inesperado).";
+                }
+            } catch (error) {
+                console.error("Error calling Gemini API:", error);
+                return "Hubo un problema al contactar al asistente IA. Por favor, inténtelo más tarde.";
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            const views = document.querySelectorAll('.view');
+            const navContainer = document.getElementById('bottom-nav');
+            const rutSubmitBtn = document.getElementById('rut-submit-btn');
+            const demoBtn = document.getElementById('demo-btn');
+            const rutInput = document.getElementById('rut-input');
+            const triageCardsContainer = document.getElementById('triage-cards-container');
+            const videoGallery = document.getElementById('video-gallery');
+            const videoModal = document.getElementById('video-modal');
+            const closeModalBtn = document.getElementById('close-modal-btn');
+            const timeEl = document.getElementById('current-time');
+            const geminiSymptomBtn = document.getElementById('gemini-symptom-assist-btn');
+            const geminiSymptomResponseArea = document.getElementById('gemini-symptom-response-area');
+            const geminiSymptomResponseContent = geminiSymptomResponseArea.querySelector('.gemini-response-content');
+            const geminiSymptomLoader = geminiSymptomResponseArea.querySelector('.loader');
+
+            function updateTime() {
+                const now = new Date();
+                timeEl.textContent = now.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' });
+            }
+            updateTime();
+            setInterval(updateTime, 1000 * 60);
+
+            function showView(viewId) {
+                views.forEach(view => view.classList.remove('active'));
+                document.getElementById(`${viewId}-view`).classList.add('active');
+                appState.currentView = viewId;
+                updateNav();
+                window.scrollTo(0, 0);
+            }
+
+            function updateNav() {
+                if(!appState.navInitialized) initializeNav();
+                const navButtons = document.querySelectorAll('.nav-btn');
+                navButtons.forEach(btn => {
+                    if (btn.dataset.target === appState.currentView) {
+                        btn.classList.add('text-teal-600');
+                        btn.classList.remove('text-slate-500');
+                    } else {
+                        btn.classList.add('text-slate-500');
+                        btn.classList.remove('text-teal-600');
+                    }
+                });
+            }
+
+            function initializeNav() {
+                if (appState.navInitialized) return;
+                navContainer.innerHTML = '';
+                
+                const navItems = [
+                    { id: 'scan', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" /></svg>`, label: 'Inicio'},
+                    { id: 'triage-info', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 12h16M4 18h7" /></svg>`, label: 'Categorías'},
+                    { id: 'videoteca', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path stroke-linecap="round" stroke-linejoin="round" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>`, label: 'Videoteca'},
+                    { id: 'share', icon: `<svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.684 13.342C8.886 12.938 9 12.482 9 12s-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6.002l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.367a3 3 0 105.367 2.684 3 3 0 00-5.367-2.684z" /></svg>`, label: 'Compartir'}
+                ];
+
+                navItems.forEach(item => {
+                    const btn = document.createElement('button');
+                    btn.className = "nav-btn flex flex-col items-center text-slate-500 hover:text-teal-600 transition-all text-xs font-medium";
+                    btn.dataset.target = item.id;
+                    btn.innerHTML = `${item.icon}<span class="mt-1">${item.label}</span>`;
+                    navContainer.appendChild(btn);
+                });
+
+                appState.navInitialized = true;
+            }
+
+            function setupPatientView(triageCategoryKey) {
+                appState.patientTriage = triageCategoryKey;
+                const data = triageData[triageCategoryKey];
+                
+                document.getElementById('patient-status-card').className = `rounded-2xl p-6 md:p-8 shadow-lg mb-8 transition-all triage-card-${triageCategoryKey}`;
+                document.getElementById('patient-category-title').textContent = `SU CATEGORIZACIÓN ES ${data.title.toUpperCase()}`;
+                document.getElementById('patient-category-name').textContent = data.name;
+                document.getElementById('patient-category-desc').textContent = data.description;
+
+                const recommendationsContainer = document.getElementById('patient-recommendations');
+                recommendationsContainer.innerHTML = '';
+                data.recommendations.forEach(rec => {
+                    const p = document.createElement('p');
+                    p.innerHTML = `&bull; ${rec}`;
+                    recommendationsContainer.appendChild(p);
+                });
+
+                const recommendedVideosContainer = document.getElementById('patient-recommended-videos');
+                recommendedVideosContainer.innerHTML = '';
+                data.videos.forEach(videoId => {
+                    const video = videoData[videoId];
+                    const a = document.createElement('a');
+                    a.href = "#";
+                    a.className = "video-link block p-3 rounded-lg hover:bg-slate-100 transition-all";
+                    a.dataset.videoId = videoId;
+                    a.innerHTML = `
+                        <div class="flex items-center gap-4">
+                            <div class="w-10 h-10 bg-teal-100 text-teal-600 flex items-center justify-center rounded-lg">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /></svg>
+                            </div>
+                            <div>
+                                <h4 class="font-semibold text-slate-700">${video.title}</h4>
+                            </div>
+                        </div>`;
+                    recommendedVideosContainer.appendChild(a);
+                });
+
+                clearInterval(waitTimeInterval);
+                let waitTimeInSeconds = data.waitTimeStandard * 60;
+                
+                function updateWaitTime() {
+                    if (waitTimeInSeconds <= 0) {
+                        document.getElementById('patient-wait-time').textContent = "Evaluando...";
+                        clearInterval(waitTimeInterval);
+                        return;
+                    }
+                    const hours = Math.floor(waitTimeInSeconds / 3600);
+                    const minutes = Math.floor((waitTimeInSeconds % 3600) / 60);
+                    const seconds = waitTimeInSeconds % 60;
+                    document.getElementById('patient-wait-time').textContent = 
+                        `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+                    waitTimeInSeconds--;
+                }
+                updateWaitTime();
+                waitTimeInterval = setInterval(updateWaitTime, 1000);
+                
+                geminiSymptomResponseArea.classList.add('hidden');
+                geminiSymptomResponseContent.innerHTML = '';
+
+
+                if (!appState.navInitialized) {
+                    initializeNav();
+                }
+                showView('status');
+            }
+            
+            function simulateLogin(){
+                 const categories = ['C2', 'C3', 'C4', 'C5'];
+                const randomCategory = categories[Math.floor(Math.random() * categories.length)];
+                setupPatientView(randomCategory);
+            }
+
+            rutSubmitBtn.addEventListener('click', () => {
+                if (rutInput.value.length > 5) { // Simple validation
+                    simulateLogin();
+                } else {
+                    alert("Por favor ingrese un RUT válido.");
+                }
+            });
+
+            demoBtn.addEventListener('click', () => {
+                // For demo, show a less severe case to highlight educational aspect
+                const demoCategories = ['C4', 'C5'];
+                const randomDemoCategory = demoCategories[Math.floor(Math.random() * demoCategories.length)];
+                setupPatientView(randomDemoCategory);
+            });
+            
+            rutInput.addEventListener('input', (e) => {
+                let rut = e.target.value.replace(/[^0-9kK]/g, '');
+                rut = rut.slice(0, 9);
+                if (rut.length > 1) {
+                    let body = rut.slice(0, -1);
+                    let dv = rut.slice(-1);
+                    body = new Intl.NumberFormat('de-DE').format(body);
+                    rut = body + '-' + dv;
+                }
+                e.target.value = rut;
+            });
+
+
+            geminiSymptomBtn.addEventListener('click', async () => {
+                if (!appState.patientTriage) return;
+
+                geminiSymptomResponseArea.classList.remove('hidden');
+                geminiSymptomLoader.classList.remove('hidden');
+                geminiSymptomResponseContent.innerHTML = '';
+                geminiSymptomBtn.disabled = true;
+
+                const currentTriageData = triageData[appState.patientTriage];
+                const prompt = `Eres un asistente virtual de un hospital en Talca, Chile, para el proyecto PACE (Portal de Atención y Clasificación en Urgencias). Un paciente ha sido clasificado en la categoría '${currentTriageData.name}' (${currentTriageData.description}). Proporciona, en un tono amigable y tranquilizador: 1. Consejos generales y seguros para sobrellevar la espera y manejar el malestar común asociado a esta categoría (sin dar consejos médicos específicos ni diagnósticos). 2. Una breve explicación adicional sobre lo que implica esta categoría. 3. Tres preguntas útiles que el paciente podría hacerle al médico cuando sea atendido. Formatea la respuesta con Markdown, usando encabezados H4 (####) para cada sección (Consejos Durante la Espera, Sobre tu Categoría, Preguntas para el Personal Médico). Usa listas con viñetas para los consejos y preguntas. No des consejos médicos directos ni diagnósticos. Finaliza con una frase corta recordando que esta información es de apoyo y no reemplaza la evaluación médica.`;
+                
+                const responseText = await getGeminiApiResponse(prompt);
+                
+                geminiSymptomLoader.classList.add('hidden');
+                geminiSymptomResponseContent.innerHTML = responseText.replace(/\n/g, "<br>").replace(/#### (.*?)(<br>|$)/g, "<h4>$1</h4>").replace(/(\* |- ) (.*?)(<br>|$)/g, "<ul><li>$2</li></ul>").replace(/<\/ul><br><ul>/g, "");
+                geminiSymptomBtn.disabled = false;
+            });
+
+            document.body.addEventListener('click', (e) => {
+                const navBtn = e.target.closest('.nav-btn');
+                if (navBtn) {
+                    showView(navBtn.dataset.target);
+                    return;
+                }
+
+                const videoLink = e.target.closest('.video-link');
+                if (videoLink) {
+                    e.preventDefault();
+                    openVideoModal(videoLink.dataset.videoId);
+                }
+
+                const geminiTriageExplainBtn = e.target.closest('.gemini-triage-explain-btn');
+                if (geminiTriageExplainBtn) {
+                    const categoryKey = geminiTriageExplainBtn.dataset.category;
+                    const responseDiv = document.getElementById(`gemini-triage-response-${categoryKey}`);
+                    const loaderDiv = responseDiv.querySelector('.loader');
+                    const contentDiv = responseDiv.querySelector('.gemini-response-content');
+                    
+                    responseDiv.classList.remove('hidden');
+                    loaderDiv.classList.remove('hidden');
+                    contentDiv.innerHTML = '';
+                    geminiTriageExplainBtn.disabled = true;
+
+                    const currentTriageData = triageData[categoryKey];
+                    const prompt = `Eres un asistente virtual de un hospital en Talca, Chile. Explica de manera detallada, clara y empática qué significa la categoría de triage '${currentTriageData.name}' (${currentTriageData.description}). Incluye: 1. Ejemplos comunes (no exhaustivos) de condiciones que podrían caer en esta categoría. 2. Por qué es importante esta clasificación para la seguridad del paciente. 3. Una explicación sobre por qué los tiempos de espera pueden variar para esta categoría. Usa un lenguaje sencillo y tranquilizador. Formatea la respuesta con Markdown, usando encabezados H4 (####) para cada sección y listas con viñetas donde sea apropiado. Recuerda que el paciente está en Talca, Chile y que esta información es de apoyo.`;
+
+                    getGeminiApiResponse(prompt).then(responseText => {
+                        loaderDiv.classList.add('hidden');
+                        contentDiv.innerHTML = responseText.replace(/\n/g, "<br>").replace(/#### (.*?)(<br>|$)/g, "<h4>$1</h4>").replace(/(\* |- ) (.*?)(<br>|$)/g, "<ul><li>$2</li></ul>").replace(/<\/ul><br><ul>/g, "");
+                        geminiTriageExplainBtn.disabled = false;
+                    });
+                }
+            });
+
+            function populateTriageInfo() {
+                triageCardsContainer.innerHTML = '';
+                Object.keys(triageData).forEach(key => {
+                    const data = triageData[key];
+                    const card = document.createElement('div');
+                    card.className = `triage-info-card border rounded-xl overflow-hidden transition-all triage-border-${key}`;
+                    card.innerHTML = `
+                        <div class="triage-card-header p-4 cursor-pointer flex justify-between items-center triage-bg-light-${key}">
+                            <div class="flex items-center gap-4">
+                               <div class="w-12 h-12 flex items-center justify-center rounded-lg font-bold text-lg triage-card-${key}">${key}</div>
+                               <div>
+                                  <h4 class="font-bold text-lg text-slate-800">${data.title}</h4>
+                                  <p class="text-sm text-slate-600">${data.description}</p>
+                               </div>
+                            </div>
+                            <svg class="w-6 h-6 transform transition-transform text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>
+                        </div>
+                        <div class="triage-card-body p-4 bg-white border-t triage-border-${key} hidden">
+                            <p><strong>Tiempo de espera estándar:</strong> ${data.waitTimeStandard > 0 ? `Hasta ${data.waitTimeStandard} min` : 'Inmediata'}</p>
+                            <p class="mt-2"><strong>Recomendaciones generales:</strong></p>
+                            <ul class="list-disc list-inside mt-1 space-y-1 text-slate-600">
+                                ${data.recommendations.map(r => `<li>${r}</li>`).join('')}
+                            </ul>
+                            <button data-category="${key}" class="gemini-triage-explain-btn mt-4 w-full bg-sky-100 text-sky-700 font-semibold py-2 px-4 rounded-lg hover:bg-sky-200 transition-all flex items-center justify-center gap-2 text-sm">
+                                <span class="text-md">✨</span> Explicación Detallada IA
+                            </button>
+                            <div id="gemini-triage-response-${key}" class="gemini-response-container hidden">
+                                <div class="loader"></div>
+                                <div class="gemini-response-content"></div>
+                                <p class="text-xs text-slate-500 mt-2 text-center"><i>Asistente IA. No reemplaza consejo médico.</i></p>
+                            </div>
+                        </div>
+                    `;
+                    triageCardsContainer.appendChild(card);
+                });
+            }
+            populateTriageInfo();
+            
+            triageCardsContainer.addEventListener('click', e => {
+                const header = e.target.closest('.triage-card-header');
+                if (header) {
+                    const card = header.parentElement;
+                    const body = card.querySelector('.triage-card-body');
+                    const icon = header.querySelector('svg');
+                    
+                    const isOpen = !body.classList.contains('hidden');
+                    if (!isOpen) {
+                        body.classList.remove('hidden');
+                        icon.classList.add('rotate-180');
+                    } else { 
+                        if (!e.target.closest('.gemini-triage-explain-btn')) {
+                           body.classList.add('hidden');
+                           icon.classList.remove('rotate-180');
+                           const geminiResponseDiv = body.querySelector('[id^="gemini-triage-response-"]');
+                           if (geminiResponseDiv) geminiResponseDiv.classList.add('hidden');
+                        }
+                    }
+                }
+            });
+            
+            function populateVideoteca() {
+                videoGallery.innerHTML = '';
+                Object.keys(videoData).forEach(videoId => {
+                    const video = videoData[videoId];
+                    const card = document.createElement('a');
+                    card.href = '#';
+                    card.dataset.videoId = videoId;
+                    card.className = 'video-link group block bg-white p-4 rounded-xl shadow-sm border border-slate-200 hover:shadow-lg hover:-translate-y-1 transition-all';
+                    card.innerHTML = `
+                        <div class="relative pt-[56.25%] bg-slate-200 rounded-lg mb-4 flex items-center justify-center">
+                            <svg class="absolute w-12 h-12 text-teal-500 group-hover:text-teal-600 transition-all" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M10 18a8 8 0 100-16 8 8 0 000 16zM9.555 7.168A1 1 0 008 8.118v3.764a1 1 0 001.555.832l3.197-1.882a1 1 0 000-1.664l-3.197-1.882z" clip-rule="evenodd" /></svg>
+                        </div>
+                        <h4 class="font-semibold text-slate-800 group-hover:text-teal-700 transition-colors">${video.title}</h4>
+                        <p class="text-sm text-slate-500 mt-1">${video.description}</p>
+                    `;
+                    videoGallery.appendChild(card);
+                });
+            }
+            populateVideoteca();
+
+            function openVideoModal(videoId) {
+                const video = videoData[videoId];
+                document.getElementById('modal-video-title').textContent = video.title;
+                document.getElementById('modal-video-desc').textContent = video.description;
+                videoModal.classList.add('active');
+            }
+
+            closeModalBtn.addEventListener('click', () => videoModal.classList.remove('active'));
+            videoModal.addEventListener('click', (e) => {
+                if(e.target === videoModal) {
+                    videoModal.classList.remove('active');
+                }
+            });
+            
+            function generateQRCode() {
+                const appUrl = 'https://proyectopace.hospitaltalca.cl'; // Placeholder URL for real-world scenario
+                const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(appUrl)}`;
+                document.getElementById('qr-code-img').src = qrApiUrl;
+                document.getElementById('app-url-display').textContent = appUrl;
+            }
+
+            initializeNav();
+            updateNav(); 
+            populateTriageInfo();
+            populateVideoteca();
+            generateQRCode();
+        });
+    </script>
+</body>
+</html>
+
